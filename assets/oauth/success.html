@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Success - Stream Artifact</title>
+    <style>
+        body {
+            font-family: 'Consolas', monospace;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: #00ffff;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 50px auto;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #00ffff;
+            border-radius: 10px;
+            padding: 40px;
+        }
+        h1 {
+            color: #00ff00;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+        .success-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        p {
+            font-size: 1.2em;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .close-btn {
+            background: #00ffff;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1.1em;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Consolas', monospace;
+        }
+        .close-btn:hover {
+            background: #00cccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1>Authorization Successful!</h1>
+        <p>Your account has been connected successfully to Stream Artifact.</p>
+        <p>You can now close this window and return to the application.</p>
+        <button class="close-btn" onclick="window.close()">Close Window</button>
+    </div>
+</body>
+</html>
