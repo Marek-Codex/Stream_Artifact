@@ -4,7 +4,7 @@ Professional interface with resizable sections and comprehensive options
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox # scrolledtext might be used by ConsolePanel directly
 import customtkinter as ctk
 from typing import Dict, List, Optional, Callable
 import threading
@@ -17,860 +17,548 @@ from pathlib import Path
 
 from ..core.config import Config
 from .settings_window import SettingsWindow
-from .oauth_wizard import OAuthSetupWizard
+from .oauth_wizard import OAuthSetupWizard # Ensure this is the correct wizard class
+from .panels.base_panel import BasePanel # Import BasePanel for type hinting if needed
+from .panels.console_panel import ConsolePanel
+from .panels.dashboard_panel import DashboardPanel
+from .panels.commands_panel import CommandsPanel
+from .panels.timers_panel import TimersPanel
+# Future panels:
 
 logger = logging.getLogger(__name__)
 
 
 class MainWindow:
-    """Main application window with Streamlabs-style interface"""
-    
+    """Main application window with a modular panel-based interface."""
+
     def __init__(self, app):
         self.app = app
         self.config = app.config
-        self.root = None
+        self.root: Optional[ctk.CTk] = None
         self.is_running = False
-        
+
         # UI Components
-        self.settings_window = None
-        self.oauth_wizard = None
-        self.status_bar = None
-        self.connection_status = None
-        
-        # Content panels
-        self.sidebar = None
-        self.main_content = None
-        self.current_panel = "console"
-        
-        # Connection state
-        self.is_connected = False
-        self.connection_thread = None
-        self.first_run = self.config.is_first_run()
-        
-        # Initialize theme
+        self.settings_window: Optional[SettingsWindow] = None
+        self.oauth_wizard: Optional[OAuthSetupWizard] = None # Or your specific wizard class
+        self.status_bar: Optional[ctk.CTkFrame] = None
+        self.connection_status_label: Optional[ctk.CTkLabel] = None # For status bar
+        self.connect_button: Optional[ctk.CTkButton] = None # For header
+        self.connection_indicator_dot: Optional[ctk.CTkLabel] = None # For sidebar header
+
+        # Panel Management
+        self.sidebar: Optional[ctk.CTkFrame] = None
+        self.main_content_area: Optional[ctk.CTkFrame] = None # Frame to pack panels into
+        self.panel_title_label: Optional[ctk.CTkLabel] = None
+        self.current_panel_id: str = "console" # Default panel
+        self.active_panel_widget: Optional[BasePanel] = None # Current visible panel
+        self.panels_cache: Dict[str, BasePanel] = {} # Cache for instantiated panels
+        self.nav_buttons: Dict[str, ctk.CTkButton] = {}
+
+        # Helper attributes for ConsolePanel interactions (might be phased out)
+        # self.chat_display: Optional[scrolledtext.ScrolledText] = None # Managed by ConsolePanel
+        # self.activity_log: Optional[scrolledtext.ScrolledText] = None # Managed by ConsolePanel
+
+        # Connection state - primarily managed by app core, reflected in UI
+        self.is_connected: bool = False
+        self.connection_thread = None # Likely managed by app core
+        self.first_run = self.config.is_first_run() # Or use setup_complete flag
+
         self._setup_theme()
-        
-        logger.info("🎨 Streamlabs-style window initialized")
-    
+        logger.info("🎨 Main window initialized")
+
     def _setup_theme(self):
-        """Setup the professional theme with brand color #3CA0FF"""
-        # Tonal dark theme with brand primary color
+        """Setup the theme based on config or defaults."""
+        # Using a simplified color definition for brevity in this example
         self.colors = {
-            # Background layers (darkest to lightest)
-            'bg_primary': '#0a0a0a',      # Darkest background
-            'bg_secondary': '#1a1a1a',    # Secondary panels
-            'bg_tertiary': '#2a2a2a',     # Elevated elements
-            'bg_quaternary': '#3a3a3a',   # Highest elevation
-            'sidebar_bg': '#151515',      # Sidebar background
-            
-            # Text colors
-            'text_primary': '#ffffff',    # Primary text (white)
-            'text_secondary': '#d4d4d4',  # Secondary text (light gray)
-            'text_muted': '#9d9d9d',      # Muted text (medium gray)
-            'text_inverse': '#0a0a0a',    # Inverse text (dark on light)
-            
-            # Border and divider colors
-            'border_color': '#404040',    # Standard borders
-            'border_light': '#505050',    # Lighter borders
-            'border_dark': '#303030',     # Darker borders
-            
-            # Brand primary color (#3CA0FF) and its variations
-            'accent_primary': '#3CA0FF',  # Your brand color
-            'accent_primary_hover': '#5fb3ff', # Lighter hover state
-            'accent_primary_pressed': '#2690ff', # Darker pressed state
-            'accent_primary_muted': '#3ca0ff33', # Semi-transparent version
-            'accent_primary_bg': '#3ca0ff1a',    # Very light background tint
-            
-            # Secondary accent colors (complementary to brand)
-            'accent_secondary': '#40E0D0',    # Turquoise (complementary)
-            'accent_tertiary': '#FF6B9D',     # Pink (triadic)
-            'accent_blue': '#3CA0FF',         # Your brand color (alias)
-            'accent_green': '#4ade80',        # Green accent
-            'accent_orange': '#fbbf24',       # Orange accent  
-            'accent_red': '#f87171',          # Red accent
-            
-            # Functional colors
-            'success_color': '#4ade80',   # Green for success
-            'warning_color': '#fbbf24',   # Yellow for warnings
-            'error_color': '#f87171',     # Red for errors
-            'info_color': '#3CA0FF',      # Use brand color for info
-            
-            # Interactive elements
-            'button_bg': '#3CA0FF',       # Primary button background
-            'button_hover': '#5fb3ff',    # Button hover state
-            'button_pressed': '#2690ff',  # Button pressed state
-            'hover_color': '#2a2a2a',     # General hover background
-            'active_color': '#3a3a3a',    # Active state background
-            'focus_color': '#3CA0FF',     # Focus ring color
-            
-            # Input elements
-            'input_bg': '#2a2a2a',        # Input background
-            'input_border': '#404040',    # Input border
-            'input_focus': '#3CA0FF',     # Input focus border
-            'input_placeholder': '#6b7280', # Placeholder text
-            
-            # Scrollbar elements
-            'scrollbar_bg': '#1a1a1a',    # Scrollbar track
-            'scrollbar_thumb': '#404040', # Scrollbar thumb
-            'scrollbar_hover': '#505050', # Scrollbar thumb hover
-            
-            # Special UI elements
-            'card_bg': '#1a1a1a',         # Card backgrounds
-            'modal_bg': '#0a0a0a',        # Modal backgrounds
-            'overlay_bg': '#00000080',    # Overlay backgrounds
-            'separator_color': '#404040', # Separator lines
-            
-            # Status colors with brand integration
-            'online_color': '#4ade80',    # Online status
-            'offline_color': '#6b7280',   # Offline status
-            'away_color': '#fbbf24',      # Away status
-            'busy_color': '#f87171',      # Busy status
+            'bg_primary': self.config.get('theme', 'bg_primary', '#0a0a0a'),
+            'bg_secondary': self.config.get('theme', 'bg_secondary', '#1a1a1a'),
+            'bg_tertiary': self.config.get('theme', 'bg_tertiary', '#2a2a2a'),
+            'sidebar_bg': self.config.get('theme', 'sidebar_bg', '#151515'),
+            'text_primary': self.config.get('theme', 'text_primary', '#ffffff'),
+            'text_secondary': self.config.get('theme', 'text_secondary', '#d4d4d4'),
+            'text_muted': self.config.get('theme', 'text_muted', '#9d9d9d'),
+            'border_color': self.config.get('theme', 'border_color', '#404040'),
+            'accent_primary': self.config.get('theme', 'accent_primary', '#3CA0FF'),
+            'accent_primary_hover': self.config.get('theme', 'accent_primary_hover', '#5fb3ff'),
+            'accent_green': self.config.get('theme', 'accent_green', '#4ade80'),
+            'accent_red': self.config.get('theme', 'accent_red', '#f87171'),
+            'accent_orange': self.config.get('theme', 'accent_orange', '#fbbf24'),
+            'button_bg': self.config.get('theme', 'button_bg', '#3CA0FF'),
+            'button_hover': self.config.get('theme', 'button_hover', '#5fb3ff'),
+            'input_bg': self.config.get('theme', 'input_bg', '#2a2a2a'),
+            'input_border': self.config.get('theme', 'input_border', '#404040'),
+            'scrollbar_thumb': self.config.get('theme', 'scrollbar_thumb', '#404040'),
+            'scrollbar_hover': self.config.get('theme', 'scrollbar_hover', '#505050'), # Corrected key
+            'online_color': self.config.get('theme', 'online_color', '#4ade80'),
+            'offline_color': self.config.get('theme', 'offline_color', '#6b7280'), # Generic gray
+            'hover_color': self.config.get('theme', 'hover_color', '#2a2a2a'), # For nav buttons
         }
-        
-        # Configure CTk appearance with custom theme
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-        
-        # Override CTk colors with our brand colors
-        self._apply_brand_theme()
-    
+        # Add any missing essential colors with defaults if not in config
+        self.colors.setdefault('accent_blue', self.colors['accent_primary'])
+
+
+        ctk.set_appearance_mode(self.config.get('ui', 'appearance_mode', "dark"))
+        ctk.set_default_color_theme(self.config.get('ui', 'color_theme', "blue")) # or a custom theme file
+        # self._apply_brand_theme() # This might be too aggressive; apply colors selectively or use a theme file
+
     def create_window(self):
-        """Create the main window"""
+        """Create the main application window."""
         self.root = ctk.CTk()
-        self.root.title("Stream Artifact")
-        self.root.geometry("1400x900")
+        self.root.title(self.config.get('app', 'title', "Stream Artifact"))
+        # Use config for geometry, with a default
+        default_geometry = "1400x900"
+        # geometry = self.config.get('ui', 'window_geometry', default_geometry) # Example
+        self.root.geometry(default_geometry)
         self.root.configure(fg_color=self.colors['bg_primary'])
-        
-        # Set window icon
+
         try:
-            icon_path = Path(__file__).parent.parent.parent / "assets" / "Chibi_Construct.png"
+            # Resolve path relative to this file's location more robustly
+            assets_dir = Path(__file__).resolve().parent.parent.parent / "assets"
+            icon_path = assets_dir / "Chibi_Construct.png" # Ensure this is the correct icon name
             if icon_path.exists():
-                # Set the window icon properly
-                self.root.iconbitmap(default=str(icon_path)) if icon_path.suffix == '.ico' else None
-                
-                # Also set with PhotoImage for broader compatibility
-                icon = Image.open(icon_path)
-                icon = icon.resize((32, 32), Image.Resampling.LANCZOS)
-                icon_photo = ImageTk.PhotoImage(icon)
-                self.root.iconphoto(True, icon_photo)
-                
-                # Store reference to prevent garbage collection
-                self.icon_photo = icon_photo
+                icon_image = Image.open(icon_path)
+                # For Windows title bar icon (usually .ico)
+                ico_path = assets_dir / "app_icon.ico" # Assuming you might have an .ico
+                if ico_path.exists() and os.name == 'nt':
+                     self.root.iconbitmap(default=str(ico_path))
+                else: # For taskbar icon / other OS (usually .png)
+                    # Resize for good quality in taskbar, e.g., 64x64 or 128x128
+                    icon_photo = ImageTk.PhotoImage(icon_image.resize((64, 64), Image.Resampling.LANCZOS))
+                    self.root.iconphoto(True, icon_photo)
+                    self.app_icon_photo = icon_photo # Keep reference
+            else:
+                logger.warning(f"Application icon not found at {icon_path}")
         except Exception as e:
-            logger.warning(f"Could not load icon: {e}")
-        
-        # Make window resizable
-        self.root.minsize(1200, 800)
-        
-        # Create main layout
+            logger.warning(f"Could not load application icon: {e}")
+
+        self.root.minsize(1024, 768) # Sensible minimum size
+        self.root.protocol("WM_DELETE_WINDOW", self.app.on_close) # Handle close via app
+
         self._create_layout()
-        
-        # Show setup wizard if first run
-        if self.first_run:
-            self.root.after(1000, self._show_setup_wizard)
-        
-        logger.info("🪟 Main window created")
-    
+
+        # Determine if setup wizard should run
+        if self.config.is_first_run() or not self.config.get('app', 'setup_complete', False):
+            logger.info("First run or setup not complete. Scheduling setup wizard.")
+            self.root.after(200, self._show_setup_wizard) # Short delay
+        else:
+            logger.info("Setup previously completed. Skipping wizard.")
+            # Attempt to auto-connect if configured, handled by app.py
+            # self.app.schedule_coroutine(self.app.try_auto_connect())
+
+        logger.info("🪟 Main window created and configured.")
+
     def _create_layout(self):
-        """Create the main window layout"""
-        # Create main container with simple layout
-        main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Create sidebar
-        self._create_sidebar(main_frame)
-        
-        # Create main content area
-        self._create_main_content(main_frame)
-        
-        # Create status bar
-        self._create_status_bar()
-    
-    def _create_sidebar(self, parent):
-        """Create the sidebar with navigation"""
-        self.sidebar = ctk.CTkFrame(
-            parent,
-            width=250,
-            fg_color=self.colors['sidebar_bg'],
-            corner_radius=0
-        )
-        self.sidebar.pack(side="left", fill="y", padx=2, pady=2)
+        """Create the main window layout: sidebar, content area, status bar."""
+        # Main container to hold sidebar and content area
+        main_app_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        main_app_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self._create_sidebar(main_app_frame)
+        self._create_main_content_holder(main_app_frame) # Renamed for clarity
+        self._create_status_bar() # Status bar at the bottom of self.root
+
+    def _create_sidebar(self, parent_frame):
+        """Create the sidebar with header, navigation, and bottom controls."""
+        self.sidebar = ctk.CTkFrame(parent_frame, width=250, fg_color=self.colors['sidebar_bg'], corner_radius=0)
+        self.sidebar.pack(side="left", fill="y", padx=(0,1), pady=0) # Pad only on right
         self.sidebar.pack_propagate(False)
+
+        # Sidebar Header (App Title & Connection Status)
+        sidebar_header = ctk.CTkFrame(self.sidebar, height=60, fg_color=self.colors['bg_secondary'], corner_radius=0)
+        sidebar_header.pack(fill="x", pady=(0,1)) # Pad only on bottom
+        sidebar_header.pack_propagate(False)
         
-        # Header section
-        header_frame = ctk.CTkFrame(
-            self.sidebar,
-            height=60,
-            fg_color=self.colors['bg_secondary'],
-            corner_radius=0
-        )
-        header_frame.pack(fill="x", padx=5, pady=5)
-        header_frame.pack_propagate(False)
-        
-        # App title and icon
-        title_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_frame.pack(expand=True)
-        
-        # Load and display icon
+        title_container = ctk.CTkFrame(sidebar_header, fg_color="transparent")
+        title_container.pack(expand=True, fill="both", padx=10)
+
+
         try:
-            icon_path = Path(__file__).parent.parent.parent / "assets" / "Chibi_Construct.png"
-            if icon_path.exists():
-                icon = Image.open(icon_path)
-                icon = icon.resize((24, 24), Image.Resampling.LANCZOS)
-                icon_photo = ImageTk.PhotoImage(icon)
-                
-                icon_label = ctk.CTkLabel(
-                    title_frame,
-                    image=icon_photo,
-                    text="",
-                    width=24,
-                    height=24
-                )
-                icon_label.image = icon_photo  # Keep a reference
-                icon_label.pack(side="left", padx=5)
+            assets_dir = Path(__file__).resolve().parent.parent.parent / "assets"
+            sidebar_icon_path = assets_dir / "Chibi_Construct.png"
+            if sidebar_icon_path.exists():
+                sidebar_img = Image.open(sidebar_icon_path).resize((28, 28), Image.Resampling.LANCZOS)
+                self.sidebar_icon = ImageTk.PhotoImage(sidebar_img) # Keep reference
+                icon_lbl = ctk.CTkLabel(title_container, image=self.sidebar_icon, text="")
+                icon_lbl.pack(side="left", padx=(0, 5))
         except Exception as e:
             logger.warning(f"Could not load sidebar icon: {e}")
+
+        app_title_lbl = ctk.CTkLabel(title_container, text=self.config.get('app', 'title', "Stream Artifact"), font=("Segoe UI", 16, "bold"), text_color=self.colors['text_primary'])
+        app_title_lbl.pack(side="left", padx=5)
+
+        self.connection_indicator_dot = ctk.CTkLabel(title_container, text="●", font=("Segoe UI", 16), text_color=self.colors['offline_color'])
+        self.connection_indicator_dot.pack(side="right", padx=5)
+
+        self._create_navigation_menu(self.sidebar) # Pass sidebar as parent
+
+        # Sidebar Bottom (Settings & Wizard Buttons)
+        sidebar_bottom = ctk.CTkFrame(self.sidebar, height=90, fg_color=self.colors['bg_secondary'], corner_radius=0) # Reduced height
+        sidebar_bottom.pack(fill="x", side="bottom")
+        sidebar_bottom.pack_propagate(False)
         
-        title_label = ctk.CTkLabel(
-            title_frame,
-            text="Stream Artifact",
-            font=("Segoe UI", 16, "bold"),
-            text_color=self.colors['text_primary']
-        )
-        title_label.pack(side="left", padx=5)
-        
-        # Connection status indicator
-        self.connection_indicator = ctk.CTkLabel(
-            title_frame,
-            text="●",
-            font=("Segoe UI", 12),
-            text_color=self.colors['accent_red']
-        )
-        self.connection_indicator.pack(side="right", padx=5)
-        
-        # Navigation sections
-        self._create_navigation()
-        
-        # Bottom section with settings
-        bottom_frame = ctk.CTkFrame(
-            self.sidebar,
-            height=100,
-            fg_color=self.colors['bg_secondary'],
-            corner_radius=0
-        )
-        bottom_frame.pack(fill="x", side="bottom", padx=5, pady=5)
-        bottom_frame.pack_propagate(False)
-        
-        # Settings button
+        bottom_buttons_container = ctk.CTkFrame(sidebar_bottom, fg_color="transparent")
+        bottom_buttons_container.pack(expand=True, pady=5)
+
         settings_btn = ctk.CTkButton(
-            bottom_frame,
-            text="⚙️ Settings",
-            command=self._open_settings,
-            width=200,
-            height=35,
-            fg_color=self.colors['button_bg'],
-            hover_color=self.colors['button_hover']
+            bottom_buttons_container, text="⚙️ Settings", command=self._open_settings_window, width=180, height=35,
+            fg_color=self.colors['button_bg'], hover_color=self.colors['button_hover']
         )
-        settings_btn.pack(pady=10)
-        
-        # Setup wizard button
+        settings_btn.pack(pady=(5,2))
+
         wizard_btn = ctk.CTkButton(
-            bottom_frame,
-            text="🧙 Setup Wizard",
-            command=self._show_setup_wizard,
-            width=200,
-            height=35,
-            fg_color=self.colors['accent_orange'],
-            hover_color=self.colors['accent_orange']
+            bottom_buttons_container, text="🧙 Setup Wizard", command=self._show_setup_wizard, width=180, height=35,
+            fg_color=self.colors['accent_orange'], hover_color=self.colors.get('accent_orange_hover', self.colors['accent_orange'])
         )
-        wizard_btn.pack(pady=5)
-    
-    def _create_navigation(self):
-        """Create navigation menu"""
-        # Scrollable frame for navigation
-        nav_frame = ctk.CTkScrollableFrame(
-            self.sidebar,
-            fg_color="transparent",
+        wizard_btn.pack(pady=(2,5))
+
+    def _create_navigation_menu(self, parent_frame):
+        """Create the scrollable navigation menu in the sidebar."""
+        nav_scrollable_frame = ctk.CTkScrollableFrame(
+            parent_frame, fg_color="transparent",
             scrollbar_button_color=self.colors['scrollbar_thumb'],
-            scrollbar_button_hover_color=self.colors['scrollbar_bg']
+            scrollbar_button_hover_color=self.colors['scrollbar_hover']
         )
-        nav_frame.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Navigation items (matching Streamlabs layout)
-        nav_items = [
-            ("📊 Console", "console", "Main dashboard and activity"),
-            ("📈 Dashboard", "dashboard", "Stream analytics and stats"),
-            ("👥 Subscribers", "subscribers", "Subscriber management"),
-            ("💬 Commands", "commands", "Custom chat commands"),
-            ("⏰ Timers", "timers", "Automated timed messages"),
-            ("💭 Quotes", "quotes", "Quote system management"),
-            ("📑 Extra Quotes", "extra_quotes", "Additional quote categories"),
-            ("🎁 Give Away", "giveaway", "Giveaway management"),
-            ("🎵 Songrequest", "songrequest", "Song request system"),
-            ("🔊 Sound Files", "sound_files", "Sound effect management"),
-            ("📋 Queue", "queue", "Queue system"),
-            ("🔢 Counter", "counter", "Counter management"),
-            ("💰 Currency", "currency", "Virtual currency system"),
-            ("👤 Users", "users", "User management"),
-            ("🎮 Minigames", "minigames", "Chat minigames"),
-            ("📊 Poll", "poll", "Poll system"),
-            ("🎯 Betting", "betting", "Betting system"),
-            ("📅 Events", "events", "Event management"),
-            ("🛠️ Mod Tools", "mod_tools", "Moderation tools"),
-            ("🔔 Notifications", "notifications", "Alert settings"),
-            ("🔗 Discord", "discord", "Discord integration")
-        ]
-        
+        nav_scrollable_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.panel_definitions = self._get_panel_definitions()
         self.nav_buttons = {}
-        
-        for icon_text, panel_id, description in nav_items:
+
+        for panel_def in self.panel_definitions:
             btn = ctk.CTkButton(
-                nav_frame,
-                text=icon_text,
-                command=lambda pid=panel_id: self._switch_panel(pid),
-                width=220,
-                height=35,
-                fg_color="transparent",
-                hover_color=self.colors['bg_tertiary'],
-                text_color=self.colors['text_secondary'],
-                anchor="w",
-                font=("Segoe UI", 12)
+                nav_scrollable_frame, text=panel_def['display_name'],
+                command=lambda pid=panel_def['id']: self.switch_to_panel(pid),
+                height=35, fg_color="transparent", hover_color=self.colors.get('hover_color', self.colors['bg_tertiary']),
+                text_color=self.colors['text_secondary'], anchor="w", font=("Segoe UI", 12)
             )
-            btn.pack(fill="x", pady=2)
-            self.nav_buttons[panel_id] = btn
+            btn.pack(fill="x", pady=2, padx=2)
+            self.nav_buttons[panel_def['id']] = btn
         
-        # Set console as active by default
-        self._set_active_nav_button("console")
-    
-    def _create_main_content(self, parent):
-        """Create the main content area"""
-        self.main_content = ctk.CTkFrame(
-            parent,
-            fg_color=self.colors['bg_primary'],
-            corner_radius=0
-        )
-        self.main_content.pack(side="right", fill="both", expand=True, padx=2, pady=2)
-        
-        # Content header
-        content_header = ctk.CTkFrame(
-            self.main_content,
-            height=50,
-            fg_color=self.colors['bg_secondary'],
-            corner_radius=0
-        )
-        content_header.pack(fill="x", padx=5, pady=5)
+        self._update_active_nav_button(self.current_panel_id)
+
+    def _get_panel_definitions(self) -> List[Dict[str, str]]:
+        """Returns a list of panel definitions (id, display_name)."""
+        # This could be loaded from a config file or defined here
+        return [
+            {"id": "console", "display_name": "📊 Console"},
+            {"id": "dashboard", "display_name": "📈 Dashboard"},
+            {"id": "commands", "display_name": "💬 Commands"},
+            {"id": "timers", "display_name": "⏰ Timers"},
+            {"id": "quotes", "display_name": "💭 Quotes"},
+            # Add all other panels here...
+            {"id": "discord", "display_name": "🔗 Discord"}
+        ]
+
+    def _create_main_content_holder(self, parent_frame):
+        """Create the area where panels are displayed, including its header."""
+        content_holder_frame = ctk.CTkFrame(parent_frame, fg_color=self.colors['bg_primary'], corner_radius=0)
+        content_holder_frame.pack(side="left", fill="both", expand=True, padx=(1,0), pady=0) # Pad only on left
+
+        # Header for the content area (Panel Title & Connect Button)
+        content_header = ctk.CTkFrame(content_holder_frame, height=50, fg_color=self.colors['bg_secondary'], corner_radius=0)
+        content_header.pack(fill="x", pady=(0,1)) # Pad only on bottom
         content_header.pack_propagate(False)
+
+        self.panel_title_label = ctk.CTkLabel(content_header, text="Console", font=("Segoe UI", 18, "bold"), text_color=self.colors['text_primary'])
+        self.panel_title_label.pack(side="left", padx=15, pady=10)
+
+        # Connect button container (allows for more buttons later if needed)
+        connect_button_frame = ctk.CTkFrame(content_header, fg_color="transparent")
+        connect_button_frame.pack(side="right", padx=15, pady=5)
         
-        # Panel title
-        self.panel_title = ctk.CTkLabel(
-            content_header,
-            text="Console",
-            font=("Segoe UI", 18, "bold"),
-            text_color=self.colors['text_primary']
+        self.connect_button = ctk.CTkButton(
+            connect_button_frame, text="🔗 Connect", command=self._handle_toggle_connection, width=120, height=35,
+            fg_color=self.colors['accent_green'], hover_color=self.colors.get('accent_green_hover', self.colors['accent_green'])
         )
-        self.panel_title.pack(side="left", padx=15, pady=10)
-        
-        # Control buttons
-        control_frame = ctk.CTkFrame(content_header, fg_color="transparent")
-        control_frame.pack(side="right", padx=15, pady=5)
-        
-        # Connect/Disconnect button
-        self.connect_btn = ctk.CTkButton(
-            control_frame,
-            text="🔗 Connect",
-            command=self._toggle_connection,
-            width=120,
-            height=35,
-            fg_color=self.colors['accent_green'],
-            hover_color=self.colors['accent_green']
-        )
-        self.connect_btn.pack(side="right", padx=5)
-        
-        # Main content area with notebook for tabs
-        self.content_notebook = ttk.Notebook(self.main_content)
-        self.content_notebook.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Initialize with console panel
-        self._create_console_panel()
-    
-    def _create_console_panel(self):
-        """Create the console panel (main dashboard)"""
-        console_frame = ctk.CTkFrame(
-            self.content_notebook,
-            fg_color=self.colors['bg_primary']
-        )
-        self.content_notebook.add(console_frame, text="Console")
-        
-        # Create vertical layout for sections
-        # Top section: Chat and activity
-        top_frame = ctk.CTkFrame(console_frame, fg_color=self.colors['bg_secondary'])
-        top_frame.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Bottom section: Quick actions and stats
-        bottom_frame = ctk.CTkFrame(console_frame, fg_color=self.colors['bg_secondary'], height=200)
-        bottom_frame.pack(fill="x", padx=5, pady=5)
-        bottom_frame.pack_propagate(False)
-        
-        # Chat area
-        chat_frame = ctk.CTkFrame(top_frame, fg_color=self.colors['bg_tertiary'])
-        chat_frame.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        chat_title = ctk.CTkLabel(
-            chat_frame,
-            text="💬 Live Chat",
-            font=("Segoe UI", 14, "bold"),
-            text_color=self.colors['text_primary']
-        )
-        chat_title.pack(anchor="w", padx=10, pady=5)
-        
-        # Chat display
-        self.chat_display = scrolledtext.ScrolledText(
-            chat_frame,
-            height=15,
-            bg=self.colors['bg_primary'],
-            fg=self.colors['text_primary'],
-            insertbackground=self.colors['text_primary'],
-            font=("Consolas", 10)
-        )
-        self.chat_display.pack(fill="both", expand=True, padx=10, pady=5)
-        
-        # Bottom section: Controls and status
-        # bottom_frame is already created above
-        
-        # Create tabbed interface for bottom section
-        bottom_notebook = ttk.Notebook(bottom_frame)
-        bottom_notebook.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Activity Log tab
-        activity_frame = ctk.CTkFrame(bottom_notebook, fg_color=self.colors['bg_tertiary'])
-        bottom_notebook.add(activity_frame, text="Activity Log")
-        
-        self.activity_log = scrolledtext.ScrolledText(
-            activity_frame,
-            height=8,
-            bg=self.colors['bg_primary'],
-            fg=self.colors['text_secondary'],
-            insertbackground=self.colors['text_secondary'],
-            font=("Consolas", 9)
-        )
-        self.activity_log.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Bot Status tab
-        status_frame = ctk.CTkFrame(bottom_notebook, fg_color=self.colors['bg_tertiary'])
-        bottom_notebook.add(status_frame, text="Bot Status")
-        
-        self._create_bot_status_section(status_frame)
-        
-        # Quick Commands tab
-        commands_frame = ctk.CTkFrame(bottom_notebook, fg_color=self.colors['bg_tertiary'])
-        bottom_notebook.add(commands_frame, text="Quick Commands")
-        
-        self._create_quick_commands_section(commands_frame)
-    
-    def _create_bot_status_section(self, parent):
-        """Create bot status section"""
-        status_grid = ctk.CTkFrame(parent, fg_color="transparent")
-        status_grid.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Status items
-        status_items = [
-            ("Connection", "❌ Disconnected", "accent_red"),
-            ("Uptime", "00:00:00", "text_secondary"),
-            ("Messages Sent", "0", "text_secondary"),
-            ("Commands Processed", "0", "text_secondary"),
-            ("AI Responses", "0", "text_secondary"),
-            ("Errors", "0", "accent_red")
-        ]
-        
-        for i, (label, value, color) in enumerate(status_items):
-            row = i // 3
-            col = i % 3
-            
-            item_frame = ctk.CTkFrame(status_grid, fg_color=self.colors['bg_primary'])
-            item_frame.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
-            
-            label_widget = ctk.CTkLabel(
-                item_frame,
-                text=label,
-                font=("Segoe UI", 10),
-                text_color=self.colors['text_muted']
-            )
-            label_widget.pack(pady=2)
-            
-            value_widget = ctk.CTkLabel(
-                item_frame,
-                text=value,
-                font=("Segoe UI", 12, "bold"),
-                text_color=self.colors[color]
-            )
-            value_widget.pack(pady=2)
-        
-        # Configure grid weights
-        for i in range(3):
-            status_grid.grid_columnconfigure(i, weight=1)
-    
-    def _create_quick_commands_section(self, parent):
-        """Create quick commands section"""
-        commands_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        commands_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Command input
-        input_frame = ctk.CTkFrame(commands_frame, fg_color=self.colors['bg_primary'])
-        input_frame.pack(fill="x", pady=5)
-        
-        input_label = ctk.CTkLabel(
-            input_frame,
-            text="Send Command:",
-            font=("Segoe UI", 12),
-            text_color=self.colors['text_primary']
-        )
-        input_label.pack(side="left", padx=10, pady=10)
-        
-        self.command_entry = ctk.CTkEntry(
-            input_frame,
-            placeholder_text="Enter command...",
-            width=300,
-            height=35,
-            fg_color=self.colors['input_bg'],
-            text_color=self.colors['text_primary']
-        )
-        self.command_entry.pack(side="left", padx=10, pady=10)
-        
-        send_btn = ctk.CTkButton(
-            input_frame,
-            text="Send",
-            command=self._send_command,
-            width=80,
-            height=35,
-            fg_color=self.colors['button_bg'],
-            hover_color=self.colors['button_hover']
-        )
-        send_btn.pack(side="left", padx=10, pady=10)
-        
-        # Quick action buttons
-        actions_frame = ctk.CTkFrame(commands_frame, fg_color=self.colors['bg_primary'])
-        actions_frame.pack(fill="x", pady=5)
-        
-        quick_actions = [
-            ("🔄 Refresh", self._refresh_data),
-            ("🧹 Clear Chat", self._clear_chat),
-            ("📊 Stats", self._show_stats),
-            ("🎯 Test AI", self._test_ai)
-        ]
-        
-        for text, command in quick_actions:
-            btn = ctk.CTkButton(
-                actions_frame,
-                text=text,
-                command=command,
-                width=120,
-                height=35,
-                fg_color=self.colors['bg_tertiary'],
-                hover_color=self.colors['button_hover']
-            )
-            btn.pack(side="left", padx=5, pady=10)
-    
+        self.connect_button.pack()
+
+        # Area where the actual panel widgets will be packed
+        self.main_content_area = ctk.CTkFrame(content_holder_frame, fg_color="transparent")
+        self.main_content_area.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.switch_to_panel(self.current_panel_id) # Display the initial panel
+
     def _create_status_bar(self):
-        """Create status bar at bottom"""
-        self.status_bar = ctk.CTkFrame(
-            self.root,
-            height=25,
-            fg_color=self.colors['bg_secondary'],
-            corner_radius=0
-        )
-        self.status_bar.pack(fill="x", side="bottom")
+        """Create the status bar at the bottom of the root window."""
+        self.status_bar = ctk.CTkFrame(self.root, height=25, fg_color=self.colors['bg_secondary'], corner_radius=0)
+        self.status_bar.pack(fill="x", side="bottom", pady=(1,0)) # Pad only on top
         self.status_bar.pack_propagate(False)
+
+        status_text_lbl = ctk.CTkLabel(self.status_bar, text="Ready", font=("Segoe UI", 10), text_color=self.colors['text_secondary'])
+        status_text_lbl.pack(side="left", padx=10)
+        self.status_text_widget = status_text_lbl # Keep a reference if needed
+
+        self.connection_status_label = ctk.CTkLabel(self.status_bar, text="Disconnected", font=("Segoe UI", 10), text_color=self.colors['offline_color'])
+        self.connection_status_label.pack(side="right", padx=10)
+
+    def switch_to_panel(self, panel_id: str):
+        """Switches the visible panel in the main content area."""
+        logger.debug(f"Attempting to switch to panel: {panel_id}")
+        if self.active_panel_widget and hasattr(self.active_panel_widget, 'on_hide'):
+            self.active_panel_widget.on_hide()
+        if self.active_panel_widget:
+            self.active_panel_widget.pack_forget()
+
+        self.current_panel_id = panel_id
         
-        # Status text
-        self.status_text = ctk.CTkLabel(
-            self.status_bar,
-            text="Ready",
-            font=("Segoe UI", 10),
-            text_color=self.colors['text_secondary']
-        )
-        self.status_text.pack(side="left", padx=10)
+        panel_to_display = None
+        if panel_id in self.panels_cache:
+            panel_to_display = self.panels_cache[panel_id]
+            logger.debug(f"Loading {panel_id} from cache.")
+        else:
+            logger.debug(f"Creating new instance for {panel_id}.")
+            panel_constructor = self._get_panel_constructor(panel_id)
+            if panel_constructor:
+                panel_to_display = panel_constructor(self.main_content_area, self.app, self.colors, logger)
+                self.panels_cache[panel_id] = panel_to_display
+            else: # Fallback to a placeholder if panel not implemented
+                logger.warning(f"No constructor for panel '{panel_id}'. Using placeholder.")
+                panel_to_display = self._create_placeholder_panel_widget(panel_id)
+                # self.panels_cache[panel_id] = panel_to_display # Optionally cache placeholders
+
+        if panel_to_display:
+            self.active_panel_widget = panel_to_display
+            self.active_panel_widget.pack(in_=self.main_content_area, fill="both", expand=True)
+            if hasattr(self.active_panel_widget, 'on_show'):
+                self.active_panel_widget.on_show()
+        else: # Should not happen if placeholder is effective
+             logger.error(f"Failed to create or find panel: {panel_id}")
+
+
+        current_panel_def = next((p for p in self.panel_definitions if p['id'] == panel_id), None)
+        panel_display_name = current_panel_def['display_name'].split(" ",1)[1] if current_panel_def and " " in current_panel_def['display_name'] else panel_id.title()
+        self.panel_title_label.configure(text=panel_display_name)
         
-        # Connection status
-        self.connection_status = ctk.CTkLabel(
-            self.status_bar,
-            text="Disconnected",
-            font=("Segoe UI", 10),
-            text_color=self.colors['accent_red']
-        )
-        self.connection_status.pack(side="right", padx=10)
-    
-    def _switch_panel(self, panel_id):
-        """Switch to a different panel"""
-        self.current_panel = panel_id
-        self._set_active_nav_button(panel_id)
-        
-        # Update panel title
-        panel_titles = {
-            "console": "Console",
-            "dashboard": "Dashboard",
-            "subscribers": "Subscribers",
-            "commands": "Commands",
-            "timers": "Timers",
-            "quotes": "Quotes",
-            "extra_quotes": "Extra Quotes",
-            "giveaway": "Give Away",
-            "songrequest": "Song Request",
-            "sound_files": "Sound Files",
-            "queue": "Queue",
-            "counter": "Counter",
-            "currency": "Currency",
-            "users": "Users",
-            "minigames": "Minigames",
-            "poll": "Poll",
-            "betting": "Betting",
-            "events": "Events",
-            "mod_tools": "Mod Tools",
-            "notifications": "Notifications",
-            "discord": "Discord"
+        self._update_active_nav_button(panel_id)
+
+    def _get_panel_constructor(self, panel_id: str) -> Optional[Callable]:
+        """Returns the constructor for a given panel_id."""
+        panel_map = {
+            "console": ConsolePanel,
+            # "dashboard": DashboardPanel, # Add other panels here
+            # "commands": CommandsPanel,
         }
-        
-        self.panel_title.configure(text=panel_titles.get(panel_id, "Unknown"))
-        
-        # Clear and recreate content based on panel
-        self._create_panel_content(panel_id)
-    
-    def _set_active_nav_button(self, panel_id):
-        """Set active navigation button"""
-        for btn_id, btn in self.nav_buttons.items():
-            if btn_id == panel_id:
-                btn.configure(
-                    fg_color=self.colors['accent_blue'],
-                    text_color=self.colors['text_primary']
-                )
+        return panel_map.get(panel_id)
+
+    def _create_placeholder_panel_widget(self, panel_id: str) -> BasePanel:
+        """Creates a standard placeholder panel."""
+        # Using BasePanel itself can work if its build_ui shows a placeholder
+        # Or a dedicated PlaceholderPanel class could be made.
+        class PlaceholderPanel(BasePanel):
+            def build_ui(self):
+                label = ctk.CTkLabel(self, text=f"{panel_id.title()} Panel - Not Yet Implemented",
+                                     font=("Segoe UI", 16), text_color=self.colors['text_muted'])
+                label.pack(expand=True, padx=20, pady=20)
+
+        return PlaceholderPanel(self.main_content_area, self.app, self.colors, logger)
+
+
+    def _update_active_nav_button(self, active_panel_id: str):
+        """Updates the visual state of navigation buttons."""
+        for panel_id, button in self.nav_buttons.items():
+            if panel_id == active_panel_id:
+                button.configure(fg_color=self.colors['accent_blue'], text_color=self.colors['text_primary'])
             else:
-                btn.configure(
-                    fg_color="transparent",
-                    text_color=self.colors['text_secondary']
-                )
+                button.configure(fg_color="transparent", text_color=self.colors['text_secondary'])
     
-    def _create_panel_content(self, panel_id):
-        """Create content for specific panel"""
-        # Clear current content
-        for widget in self.content_notebook.winfo_children():
-            widget.destroy()
-        
-        if panel_id == "console":
-            self._create_console_panel()
-        elif panel_id == "commands":
-            self._create_commands_panel()
-        elif panel_id == "dashboard":
-            self._create_dashboard_panel()
-        # Add more panels as needed
+    # Methods removed as their functionality is now in ConsolePanel or app core:
+    # _create_console_panel, _create_bot_status_section, _create_quick_commands_section
+    # _send_command, _refresh_data, _clear_chat, _show_stats, _test_ai, _log_activity
+
+    # Connection handling should be done via app core, which then calls update_connection_ui
+    def _handle_toggle_connection(self):
+        """Sends toggle connection request to the main app."""
+        if self.app:
+            self.app.toggle_connection_services() # App core handles logic and calls back update_connection_ui
         else:
-            # Placeholder for other panels
-            placeholder_frame = ctk.CTkFrame(
-                self.content_notebook,
-                fg_color=self.colors['bg_primary']
-            )
-            self.content_notebook.add(placeholder_frame, text=panel_id.title())
+            logger.error("Application core not available to toggle connection.")
+            # Fallback UI update (not recommended as state desyncs)
+            # self.update_connection_ui(not self.is_connected, "Error: App offline")
+
+
+    def update_connection_ui(self, is_connected: bool, status_message: str = ""):
+        """Updates all UI elements related to connection status. Called by App."""
+        self.is_connected = is_connected
+        default_status_message = "Connected" if is_connected else "Disconnected"
+        final_status_message = status_message or default_status_message
+
+        if is_connected:
+            self.connect_button.configure(text="🔌 Disconnect", fg_color=self.colors['accent_red'])
+            self.connection_status_label.configure(text=final_status_message, text_color=self.colors['online_color'])
+            self.connection_indicator_dot.configure(text_color=self.colors['online_color'])
+            if self.status_text_widget: self.status_text_widget.configure(text="Running")
+        else:
+            self.connect_button.configure(text="🔗 Connect", fg_color=self.colors['accent_green'])
+            self.connection_status_label.configure(text=final_status_message, text_color=self.colors['offline_color'])
+            self.connection_indicator_dot.configure(text_color=self.colors['offline_color'])
+            if self.status_text_widget: self.status_text_widget.configure(text="Ready")
+
+        # If console panel is active and is a ConsolePanel, update its status too
+        if self.current_panel_id == "console" and isinstance(self.active_panel_widget, ConsolePanel):
+            conn_status_text = "✅ Connected" if is_connected else "❌ Disconnected"
+            conn_color = 'online_color' if is_connected else 'offline_color'
+            self.active_panel_widget.update_status("connection", conn_status_text, conn_color)
+        logger.info(f"Connection UI updated: {final_status_message}")
+
+
+    # Methods to interact with ConsolePanel (if active)
+    def post_message_to_chat_display(self, message: str, sender: str = "System", color_key: Optional[str] = None):
+        """Posts a message to the chat display if ConsolePanel is active."""
+        if self.current_panel_id == "console" and isinstance(self.active_panel_widget, ConsolePanel):
+            # The ConsolePanel's log_message_to_chat can be enhanced to handle sender/color
+            self.active_panel_widget.log_message_to_chat(f"[{sender}]: {message}")
+        else:
+            logger.debug(f"Chat message '{message}' not shown: Console panel not active.")
+
+    def post_activity_log(self, message: str):
+        """Posts a message to the activity log if ConsolePanel is active."""
+        if self.current_panel_id == "console" and isinstance(self.active_panel_widget, ConsolePanel):
+            self.active_panel_widget.log_to_activity_feed(message)
+        else:
+            logger.debug(f"Activity log '{message}' not shown: Console panel not active.")
             
-            placeholder_label = ctk.CTkLabel(
-                placeholder_frame,
-                text=f"{panel_id.title()} panel - Coming soon!",
-                font=("Segoe UI", 16),
-                text_color=self.colors['text_secondary']
-            )
-            placeholder_label.pack(expand=True)
-    
-    def _create_commands_panel(self):
-        """Create commands management panel"""
-        commands_frame = ctk.CTkFrame(
-            self.content_notebook,
-            fg_color=self.colors['bg_primary']
-        )
-        self.content_notebook.add(commands_frame, text="Commands")
-        
-        # Commands will be implemented here
-        label = ctk.CTkLabel(
-            commands_frame,
-            text="Commands Panel - Under Construction",
-            font=("Segoe UI", 16),
-            text_color=self.colors['text_secondary']
-        )
-        label.pack(expand=True)
-    
-    def _create_dashboard_panel(self):
-        """Create dashboard panel"""
-        dashboard_frame = ctk.CTkFrame(
-            self.content_notebook,
-            fg_color=self.colors['bg_primary']
-        )
-        self.content_notebook.add(dashboard_frame, text="Dashboard")
-        
-        # Dashboard will be implemented here
-        label = ctk.CTkLabel(
-            dashboard_frame,
-            text="Dashboard Panel - Under Construction",
-            font=("Segoe UI", 16),
-            text_color=self.colors['text_secondary']
-        )
-        label.pack(expand=True)
-    
-    def _toggle_connection(self):
-        """Toggle bot connection"""
-        if self.is_connected:
-            self._disconnect()
+    def trigger_clear_chat_display(self):
+        """Clears the chat display if ConsolePanel is active."""
+        if self.current_panel_id == "console" and isinstance(self.active_panel_widget, ConsolePanel):
+            self.active_panel_widget.clear_chat_display_widget()
+            self.post_activity_log("Chat display cleared.")
+
+
+    def _open_settings_window(self): # Renamed
+        """Opens the settings window, ensuring only one instance."""
+        if self.settings_window is None or not self.settings_window.winfo_exists():
+            self.settings_window = SettingsWindow(self.root, self.app, self.colors, logger) # Pass app
+            self.settings_window.show() # SettingsWindow should handle its own display logic
         else:
-            self._connect()
-    
-    def _connect(self):
-        """Connect to services"""
-        # Implementation will be added
-        self.is_connected = True
-        self.connect_btn.configure(
-            text="🔌 Disconnect",
-            fg_color=self.colors['accent_red']
-        )
-        self.connection_status.configure(
-            text="Connected",
-            text_color=self.colors['accent_green']
-        )
-        self.connection_indicator.configure(text_color=self.colors['accent_green'])
-    
-    def _disconnect(self):
-        """Disconnect from services"""
-        # Implementation will be added
-        self.is_connected = False
-        self.connect_btn.configure(
-            text="🔗 Connect",
-            fg_color=self.colors['accent_green']
-        )
-        self.connection_status.configure(
-            text="Disconnected",
-            text_color=self.colors['accent_red']
-        )
-        self.connection_indicator.configure(text_color=self.colors['accent_red'])
-    
-    def _send_command(self):
-        """Send command from input"""
-        command = self.command_entry.get()
-        if command:
-            self._log_activity(f"Command sent: {command}")
-            self.command_entry.delete(0, tk.END)
-    
-    def _refresh_data(self):
-        """Refresh data"""
-        self._log_activity("Data refreshed")
-    
-    def _clear_chat(self):
-        """Clear chat display"""
-        self.chat_display.delete(1.0, tk.END)
-        self._log_activity("Chat cleared")
-    
-    def _show_stats(self):
-        """Show statistics"""
-        self._log_activity("Statistics displayed")
-    
-    def _test_ai(self):
-        """Test AI response"""
-        self._log_activity("AI test initiated")
-    
-    def _log_activity(self, message):
-        """Log activity"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.activity_log.insert(tk.END, f"[{timestamp}] {message}\n")
-        self.activity_log.see(tk.END)
-    
-    def _open_settings(self):
-        """Open settings window"""
-        if self.settings_window is None:
-            self.settings_window = SettingsWindow(self.root, self.config, self.colors)
-        self.settings_window.show()
-    
+            self.settings_window.lift_and_focus() # Method in SettingsWindow to bring to front
+
     def _show_setup_wizard(self):
-        """Show the OAuth setup wizard"""
-        try:
-            if self.oauth_wizard is None:
-                self.oauth_wizard = OAuthSetupWizard(
-                    parent=self.root,
-                    config=self.config,
-                    colors=self.colors,
-                    on_complete=self._on_wizard_complete
-                )
-            
-            self.oauth_wizard.show()
-            logger.info("🧙 OAuth setup wizard opened")
-            
-        except Exception as e:
-            logger.error(f"❌ OAuth wizard error: {e}")
-            messagebox.showerror("Setup Error", f"Failed to open setup wizard: {e}")
-    
-    def _on_wizard_complete(self):
-        """Handle completion of the OAuth setup wizard"""
-        try:
-            # Mark setup as complete
-            self.config.mark_setup_complete()
-            
-            # Update first run status
-            self.first_run = False
-            
-            # Show success message
-            messagebox.showinfo(
-                "Setup Complete", 
-                "Your Stream Artifact bot has been configured successfully!\n\n"
-                "Click 'Connect' to start your bot."
+        """Shows the setup wizard, ensuring only one instance."""
+        # Dynamic import if SetupWizard is complex or to break cycles
+        from .setup_wizard.wizard_main import SetupWizard
+
+        if self.oauth_wizard is None or not (self.oauth_wizard.window and self.oauth_wizard.window.winfo_exists()): # Check window too
+            self.oauth_wizard = SetupWizard( # Use the actual wizard class name
+                parent=self.root,
+                app=self.app, # Pass app object
+                config=self.config, # Config object
+                colors=self.colors,
+                on_complete=self._on_setup_wizard_complete # Renamed callback
             )
+            self.oauth_wizard.show() # Wizard handles its display
+            logger.info("🧙 Setup wizard shown.")
+        else:
+            if hasattr(self.oauth_wizard, 'lift_and_focus'): # Check if method exists
+                self.oauth_wizard.lift_and_focus() # Wizard needs this method
+            else: # Fallback if method not implemented on wizard yet
+                self.oauth_wizard.window.lift()
+                self.oauth_wizard.window.focus_force()
+            logger.info("🧙 Existing setup wizard brought to front.")
+
+    def _on_setup_wizard_complete(self):
+        """Callback for when the setup wizard finishes."""
+        try:
+            # Config 'setup_complete' is set by the wizard itself before calling on_complete.
+            # self.config.set('app', 'setup_complete', True) # Already done by wizard
+            # self.config.save() # Already done by wizard
+
+            self.first_run = False # Update runtime state of MainWindow
+
+            messagebox.showinfo(
+                "Setup Complete",
+                "Configuration saved successfully!\n\n"
+                "If this was the first time setup, a restart might be beneficial for all changes to take effect.\n"
+                "Otherwise, you can now connect the bot if credentials are valid."
+            )
+            logger.info("✅ Setup wizard reported completion to MainWindow.")
             
-            # Start connection if we have valid config
-            if self.config.has_valid_config():
-                self.root.after(1000, self._connect)
-            
-            logger.info("✅ Setup wizard completed successfully")
-            
+            # Update UI to reflect that setup is done
+            # This might involve re-checking config and enabling/disabling features
+            # For now, just ensure connection UI is in a sensible default state.
+            if self.app:
+                 asyncio.run_coroutine_threadsafe(self.app.initialize_clients_from_config(), self.app.event_loop)
+            self.update_connection_ui(False) # Reset to disconnected, ready to connect
+
         except Exception as e:
-            logger.error(f"❌ Setup completion error: {e}")
-            messagebox.showerror("Setup Error", f"Failed to complete setup: {e}")
-    
-    def _is_configured(self) -> bool:
-        """Check if the application is properly configured"""
-        return self.config.has_valid_config()
-    
+            logger.error(f"❌ Error in MainWindow after setup wizard completion: {e}", exc_info=True)
+            messagebox.showerror("Setup Error", f"An error occurred in MainWindow after setup: {e}")
+
     def show(self):
-        """Show the window"""
+        """Ensures the main window is visible."""
+        if self.root and not self.root.winfo_viewable():
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+
+    def hide(self):
+        """Hides the main window."""
         if self.root:
             self.root.deiconify()
     
     def hide(self):
         """Hide the window"""
-        if self.root:
+        if self.root and self.root.winfo_viewable():
             self.root.withdraw()
-    
+
     def run(self):
-        """Run the main window"""
+        """Creates (if necessary) and runs the main application loop."""
         try:
-            self.create_window()
-            self.root.mainloop()
+            if not self.root:
+                self.create_window()
+            if self.root: # Ensure root was created successfully
+                 self.is_running = True
+                 self.root.mainloop()
+            else:
+                logger.critical("Root window not created. Application cannot run.")
         except Exception as e:
-            logger.error(f"❌ Window error: {e}")
-            raise
-    
+            logger.critical(f"❌ Unhandled error in main window run: {e}", exc_info=True)
+            # Optionally, attempt a graceful shutdown or error dialog
+        finally:
+            self.is_running = False # Mark as not running
+            logger.info("⏹️ Main window event loop terminated.")
+
+
     def destroy(self):
-        """Destroy the window"""
-        if self.root:
-            self.root.destroy()
-            self.root = None
-    
+        """Destroys the main window and cleans up associated resources."""
+        logger.info("Destroying main window and child components...")
+        if self.oauth_wizard and self.oauth_wizard.window and self.oauth_wizard.window.winfo_exists():
+            try:
+                self.oauth_wizard.window.destroy()
+            except Exception as e:
+                logger.error(f"Error destroying oauth_wizard: {e}")
+        self.oauth_wizard = None
+
+        if self.settings_window and self.settings_window.winfo_exists():
+            try:
+                self.settings_window.destroy()
+            except Exception as e:
+                logger.error(f"Error destroying settings_window: {e}")
+        self.settings_window = None
+        
+        # Destroy cached panels
+        for panel_id, panel_widget in self.panels_cache.items():
+            if panel_widget and panel_widget.winfo_exists():
+                try:
+                    panel_widget.destroy()
+                except Exception as e:
+                    logger.error(f"Error destroying panel {panel_id}: {e}")
+        self.panels_cache.clear()
+
+
+        if self.root and self.root.winfo_exists():
+            try:
+                self.root.destroy()
+            except Exception as e:
+                logger.error(f"Error destroying root window: {e}")
+        self.root = None
+        logger.info("Main window and resources destroyed.")
+
     def _apply_brand_theme(self):
-        """Apply the brand theme to CTk widgets"""
-        # This ensures all CTk widgets use our brand colors by default
-        import customtkinter as ctk
-        
-        # Update CTk's internal theme with our brand colors
-        ctk.ThemeManager.theme["CTkButton"]["fg_color"] = [self.colors['button_bg'], self.colors['button_bg']]
-        ctk.ThemeManager.theme["CTkButton"]["hover_color"] = [self.colors['button_hover'], self.colors['button_hover']]
-        ctk.ThemeManager.theme["CTkButton"]["text_color"] = [self.colors['text_primary'], self.colors['text_primary']]
-        
-        ctk.ThemeManager.theme["CTkEntry"]["fg_color"] = [self.colors['input_bg'], self.colors['input_bg']]
-        ctk.ThemeManager.theme["CTkEntry"]["border_color"] = [self.colors['input_border'], self.colors['input_border']]
-        ctk.ThemeManager.theme["CTkEntry"]["text_color"] = [self.colors['text_primary'], self.colors['text_primary']]
-        
-        ctk.ThemeManager.theme["CTkFrame"]["fg_color"] = [self.colors['bg_secondary'], self.colors['bg_secondary']]
-        ctk.ThemeManager.theme["CTkFrame"]["border_color"] = [self.colors['border_color'], self.colors['border_color']]
-        
-        ctk.ThemeManager.theme["CTkProgressBar"]["fg_color"] = [self.colors['bg_tertiary'], self.colors['bg_tertiary']]
-        ctk.ThemeManager.theme["CTkProgressBar"]["progress_color"] = [self.colors['accent_primary'], self.colors['accent_primary']]
+        """
+        DEPRECATED or use with caution. Modifying ThemeManager directly is generally not recommended
+        for themes that should be switchable or component-specific.
+        Prefer styling widgets directly or using CustomTkinter's JSON theme files.
+        """
+        logger.warning("'_apply_brand_theme' directly modifies CTk ThemeManager, consider alternatives.")
+        # Example: ctk.ThemeManager.theme["CTkButton"]["fg_color"] = [self.colors['button_bg'], self.colors['button_bg']]
+        # This method is kept for reference but should ideally be replaced.
+        pass

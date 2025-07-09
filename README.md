@@ -34,15 +34,15 @@
 - Multiple configuration tabs
 - Real-time updates
 - Persistent storage
-- Easy setup wizard
+- Easy setup wizard (recommended for initial setup)
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Python 3.8 or higher
 - Windows 10/11 (tested)
-- Twitch account with OAuth token
-- OpenRouter API key
+- A Twitch account (for broadcaster)
+- Optionally, an OpenRouter API key for AI features.
 
 ### Installation
 
@@ -65,30 +65,35 @@ source venv/bin/activate  # On Linux/Mac
 pip install -r requirements.txt
 ```
 
-4. **Configure settings:**
-   - Copy `.env.example` to `.env`
-   - Get your Twitch OAuth token from https://twitchapps.com/tmi/
-   - Get your OpenRouter API key from https://openrouter.ai/
-   - Update the `.env` file with your credentials
-
-5. **Run the application:**
+4. **Run the application:**
 ```bash
 python main.py
 ```
+   - On first run, a setup wizard will guide you through configuring your Twitch connection and other optional services like OpenRouter AI.
+   - Alternatively, for manual configuration (advanced):
+     - Copy `.env.example` to `.env`
+     - Get your Twitch OAuth token (e.g., from https://twitchapps.com/tmi/)
+     - Get your OpenRouter API key (from https://openrouter.ai/)
+     - Update the `.env` file with your credentials.
 
 ## 📖 Configuration Guide
 
+The primary way to configure the application is through the **Setup Wizard** that runs on first launch, or can be re-run from the application's settings. It will guide you through connecting your Twitch account(s) and optional services.
+
+For manual configuration or understanding the values:
+
 ### Twitch Setup
-1. Visit https://twitchapps.com/tmi/
-2. Generate an OAuth token
-3. Copy the token (including `oauth:` prefix)
-4. Enter your channel name (without #)
+The Setup Wizard will guide you through an OAuth process to connect your broadcaster account (and optionally, a separate bot account). This is more secure than manually handling tokens. If manual setup is preferred:
+1. Visit a site like https://twitchapps.com/tmi/ to generate an OAuth token.
+2. Copy the token (including the `oauth:` prefix).
+3. Enter your channel name (without #) and the token into the `.env` file or corresponding settings fields.
 
 ### OpenRouter Setup
+The Setup Wizard allows you to enter your OpenRouter API key and select models.
 1. Sign up at https://openrouter.ai/
-2. Create an API key
-3. Choose your preferred AI model
-4. Configure response parameters
+2. Create an API key.
+3. Enter this key when prompted by the Setup Wizard or in the AI settings.
+4. The wizard (or settings) will allow you to fetch available models and choose a default.
 
 ### UI Customization
 - **Theme**: Choose between cyberpunk, dark, or light
@@ -124,23 +129,39 @@ Access comprehensive settings through the GUI:
 ```
 stream-artifact/
 ├── src/
-│   ├── core/
+│   ├── core/                   # Core logic (backend)
 │   │   ├── app.py              # Main application class
 │   │   ├── config.py           # Configuration management
 │   │   ├── database.py         # SQLite database handler
+│   │   ├── oauth_server.py     # Local server for OAuth callbacks
 │   │   └── twitch_client.py    # Twitch chat client
-│   ├── ai/
+│   ├── ai/                     # AI related logic
 │   │   └── openrouter_client.py # OpenRouter AI client
-│   ├── ui/
-│   │   ├── main_window.py      # Main GUI window
-│   │   ├── chat_window.py      # Chat display widget
-│   │   ├── settings_window.py  # Settings interface
-│   │   └── components/
-│   │       └── cyberpunk_widgets.py # Custom UI components
-├── assets/                     # UI assets and icons
-├── config/                     # Configuration files
+│   ├── ui/                     # User interface components
+│   │   ├── main_window.py      # Main GUI window orchestrator
+│   │   ├── settings_window.py  # Settings interface window
+│   │   ├── components/         # Reusable UI widgets (buttons, frames, etc.)
+│   │   │   └── cyberpunk_widgets.py # Custom themed UI components (example)
+│   │   │   └── standard_widgets.py  # Standardized custom widgets
+│   │   ├── panels/             # Individual content panels for main window
+│   │   │   ├── base_panel.py   # Base class for all panels
+│   │   │   ├── console_panel.py # Console/log/chat display panel
+│   │   │   ├── dashboard_panel.py# Dashboard display panel
+│   │   │   ├── commands_panel.py # Custom commands management panel
+│   │   │   └── timers_panel.py   # Timed messages management panel
+│   │   │   └── ... (other panels like quotes, currency, etc.)
+│   │   └── setup_wizard/       # Multi-step setup wizard
+│   │       ├── wizard_main.py  # Main coordinator for the setup wizard
+│   │       └── steps/          # Individual steps of the wizard
+│   │           ├── base_step.py # Base class for wizard steps
+│   │           └── ... (welcome_step.py, broadcaster_step.py, etc.)
+├── assets/                     # UI assets, icons, images
+│   └── oauth/                  # HTML files for OAuth success/failure pages
+├── docs/                       # Project documentation
 ├── main.py                     # Application entry point
+├── setup.py                    # Build script for the project (if applicable)
 ├── requirements.txt            # Python dependencies
+├── .env.example                # Example environment file
 └── README.md                   # This file
 ```
 
@@ -179,11 +200,13 @@ All UI components are custom-built with:
 - `StreamArtifact`: Main application coordinator
 - `TwitchClient`: Twitch chat integration
 - `OpenRouterClient`: AI response generation
-- `MainWindow`: Primary GUI interface
+- `MainWindow`: Primary GUI interface, manages different UI panels
+- `SetupWizard`: Guides users through initial configuration
+- `BasePanel`: Base class for all UI panels within `MainWindow`
 - `Config`: Configuration management
 
 ### Adding Features
-1. Create new modules in appropriate directories
+1. Create new modules in appropriate directories (e.g., a new panel in `src/ui/panels/`)
 2. Follow the existing async/await patterns
 3. Add configuration options to `config.py`
 4. Update UI components as needed
